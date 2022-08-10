@@ -9,7 +9,8 @@
         "dev": "npm-run-all --parallel dev:react dev:electron",
         "dev:react": "webpack serve",
         "dev:electron": "nodemon --watch ./src/electron/**/* -e ts --exec \"tsc; NODE_ENV=dev electron ./dist/electron/index.js\"",
-        "build": "webpack; tsc"
+        "clean": "rm -d *.zip;rm -rd dist;rm -rd minecraft_server_manager-*",
+        "clear": "npm run clean; rm -rd node_modules"
     },
     "author": "",
     "license": "ISC",
