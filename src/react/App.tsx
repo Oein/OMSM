@@ -1,6 +1,6 @@
 import React , { useState , useEffect } from 'react';
 
-import { Text , Table , useTheme, Tooltip, Grid , Modal, Button, Input , Dropdown } from "@nextui-org/react";
+import { Text , Table , useTheme, Tooltip, Grid , Modal, Button, Input , Dropdown , Card, Container, Loading } from "@nextui-org/react";
 import { AiOutlineSetting , AiOutlineDesktop , AiOutlinePlus } from "react-icons/ai";
 const { ipcRenderer } = window.require("electron");
 import * as ipc from "../common/types";
@@ -23,14 +23,19 @@ function App() {
   const [serverVersion , setServerVersion] = useState("Loading...");
   const [serverAddOpened , setServerAddOpened] = useState(false);
   const [addRequested , setAddRequested] = useState(false);
+  const [serverRam , setServerRam] = useState("");
 
   // Settings / Console
   const [manageModalId , setManageModalId] = useState(0);
   const [managingServerId , setManagingServerId] = useState(-1);
   const [managingServer , setManagingServer] = useState<ipc.Server>({
-    id: "",name:"",port:0,status:false,version:""
+    id: "",name:"",port:0,status:false,version:"" , ram: 0,
   });
   const [rfr , setRFR] = useState("");
+  const [logs , setLogs] = useState<{[key: string]: string}>({});
+  const [serverTurnRequest , setSTRQ] = useState(false); 
+
+  let servers2: ipc.Server[] = [];
 
   useEffect(() => {
     ipcRenderer.send(ipc.Channels.SERVER_LIST_REQ , "");
@@ -39,6 +44,7 @@ function App() {
     ipcRenderer.on(ipc.Channels.SERVER_LIST_RES , (e, slrp: ipc.Server[]) => {
       console.log(slrp);
       setServers(slrp);
+      servers2 = slrp;
     });
 
     ipcRenderer.on(ipc.Channels.PAPER_VERSION_LIST_RES , (e, slrp: ipc.PAPER_VERSION_LIST_RES_PAYLOAD) => {
@@ -57,7 +63,29 @@ function App() {
     ipcRenderer.on(ipc.Channels.SERVER_ADD_RES , (e) => {
       setServerAddOpened(false);
       ipcRenderer.send(ipc.Channels.SERVER_LIST_REQ , "");
-    })
+    });
+    
+    ipcRenderer.on(ipc.Channels.SERVER_LOG , (e , d: ipc.SERVER_LOG_PAYLOAD) => {
+      let sl = logs;
+      if(sl[d.id] == undefined) sl[d.id] = "";
+      sl[d.id] += "\n" + d.message;
+      setLogs(sl);
+      setRFR(uid())
+    });
+
+    ipcRenderer.on(ipc.Channels.SERVER_ON_RES , (e , d) => {
+      servers2[servers2.findIndex(s => s.id == d)].status = true;
+      setServers(servers2);
+      setSTRQ(false);
+      // toast("Server started" , {type: "info"});
+    });
+
+    ipcRenderer.on(ipc.Channels.SERVER_OFF_RES , (e , d) => {
+      servers2[servers2.findIndex(s => s.id == d)].status = false;
+      setServers(servers2);
+      setSTRQ(false);
+      // toast("Server ended" , {type: "info"});
+    });
   } , []);
 
   return (
@@ -93,6 +121,7 @@ function App() {
             }
             setServerPort(25565);
             setServerName("");
+            setServerRam("");
           }}
       >
           <Modal.Header>
@@ -107,6 +136,9 @@ function App() {
               <Input placeholder='Server Port' type="number" min="1" max="65535" value={serverPort} onChange={(e) => {
                 setServerPort(Math.min(Math.max(parseInt(e.target.value) , 1) , 65535));
                 if(e.target.value == "") setServerPort(1);
+              }} />
+              <Input placeholder='Server Ram (GB)' type="number" value={serverRam} onChange={(e) => {
+                setServerRam(e.target.value);
               }} />
               <Dropdown isOpen={versionMenuOpened}>
                 <Dropdown.Button onClick={() => {
@@ -136,7 +168,9 @@ function App() {
               serverName.length <= 0 ||
               serverPort < 1 ||
               serverPort > 65535 ||
-              addRequested
+              addRequested ||
+              serverRam.toString().length == 0 ||
+              parseInt(serverRam).toString() != serverRam
             } onClick={() => {
               let x: ipc.SERVER_ADD_REQ_PAYLOAD = {
                 server: {
@@ -145,6 +179,7 @@ function App() {
                   port: serverPort,
                   status: false,
                   version: serverVersion,
+                  ram: parseInt(serverRam),
                 }
               };
               ipcRenderer.send(ipc.Channels.SERVER_ADD_REQ , x);
@@ -167,7 +202,8 @@ function App() {
               name: e.target.value,
               port: managingServer.port,
               status: managingServer.status,
-              version: managingServer.version
+              version: managingServer.version,
+              ram: managingServer.ram,
             };
             setManagingServer(nms);
           }} />
@@ -177,10 +213,14 @@ function App() {
               name: managingServer.name,
               port: Math.min(Math.max(parseInt(e.target.value) , 1) , 65535),
               status: managingServer.status,
-              version: managingServer.version
+              version: managingServer.version,
+              ram: managingServer.ram,
             };
             if(e.target.value == "") nms.port = 1;
             setManagingServer(nms);
+          }} />
+          <Input placeholder='Server Ram (GB)' type="number" value={serverRam} onChange={(e) => {
+            setServerRam(e.target.value);
           }} />
           <Dropdown isOpen={versionMenuOpened}>
             <Dropdown.Button onClick={() => {
@@ -195,6 +235,7 @@ function App() {
                 port: managingServer.port,
                 status: managingServer.status,
                 version: k.toString(),
+                ram: managingServer.ram,
               };
               setManagingServer(nms);
               setVersionMenuOpened(false);
@@ -217,14 +258,19 @@ function App() {
           <Modal.Footer>
             <Button auto color="success" disabled={
               MCVers.length == 0 ||
-              servers[managingServerId].name.length <= 0 ||
-              servers[managingServerId].port < 1 ||
-              servers[managingServerId].port > 65535
+              managingServer.name.length <= 0 ||
+              managingServer.port < 1 ||
+              managingServer.port > 65535 ||
+              serverRam.length <= 0 ||
+              parseInt(serverRam).toString() != serverRam
             } onClick={() => {
               setManageModalId(0);
+              let x = managingServer;
+              x.ram = parseInt(serverRam);
               let sv = servers;
-              sv[managingServerId] = managingServer;
+              sv[managingServerId] = x;
               setServers(sv);
+              servers2 = sv;
               
               ipcRenderer.send(ipc.Channels.SERVER_LIST_SET_REQ , {
                 servers: sv,
@@ -234,13 +280,85 @@ function App() {
       </Modal> : null}
       {manageModalId == 2 ? <Modal open={manageModalId == 2} onClose={() => {
         setManageModalId(0);
-      }}>
+      }} width="80%">
         <Modal.Header>
           <Text size={18}>
             Console
           </Text>
         </Modal.Header>
-        <Modal.Body></Modal.Body>
+        <Modal.Body>
+            <Button
+              color={managingServer.status ? "error" : "success"}
+              disabled={serverTurnRequest}
+              onPress={() => {
+                setSTRQ(true);
+                if(managingServer.status){
+                  ipcRenderer.send(ipc.Channels.SERVER_OFF_REQ , {
+                    id: managingServer.id
+                  })
+                }else {
+                  ipcRenderer.send(ipc.Channels.SERVER_ON_REQ , {
+                    id: managingServer.id
+                  })
+                }
+              }}
+            >{!serverTurnRequest ? <>Make {managingServer.status ? "Offline" : "Online"}</> :
+            <Loading type="points" color="currentColor" size="sm" />}
+            </Button>
+            <Card variant='bordered'>
+              <Card.Body>
+                <div style={{
+                  overflow: "scroll",
+                  maxHeight: "50vh",
+                  maxWidth: "95%",
+                }}>
+                  {
+                    (logs[managingServer.id] || "No logs for now").split("\n").map((v , i) => {
+                      return <Text style={{
+                        wordBreak: "break-all"
+                      }}>{v}</Text>;
+                    })
+                  }
+                </div>
+              </Card.Body>
+              <Card.Divider />
+              <Card.Footer>
+                <Grid.Container>
+                  <Grid xs={7.5}>
+                    <Input 
+                      placeholder="Console command" 
+                      width="97%" 
+                      clearable
+                      disabled={!managingServer.status}
+                    />
+                  </Grid>
+                  <Grid xs={2}>
+                    <Button 
+                      color="primary" 
+                      auto
+                      disabled={!managingServer.status}
+                    >
+                      Send!
+                    </Button>
+                  </Grid>
+                  <Grid xs={2}>
+                    <Button 
+                      color="primary" 
+                      auto
+                      onPress={() => {
+                        let logse = logs;
+                        logse[managingServer.id] = "";
+                        setLogs(logse);
+                        setRFR(uid());
+                      }}
+                    >
+                      Clear Log
+                    </Button>
+                  </Grid>
+                </Grid.Container>
+              </Card.Footer>
+            </Card>
+        </Modal.Body>
       </Modal> : null}
       <header style={{
         borderBottom: `1px solid ${theme?.colors.neutralBorder}`
@@ -297,6 +415,7 @@ function App() {
                         setManagingServerId(i);
                         setManageModalId(1);
                         setManagingServer(servers[i]);
+                        setServerRam(servers[i].ram.toString());
                       }} />
                     </Tooltip>
                     <Tooltip content="Console" color="invert">

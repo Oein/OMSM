@@ -4,8 +4,8 @@ import * as ipc from "../common/types";
 import { existsSync , readFileSync , writeFileSync , mkdirSync , createWriteStream } from "fs-extra";
 import axios from "axios";
 import { uid } from "uid";
-
 import https from 'https';
+import { spawn , ChildProcess } from "child_process";
 
 function downloadFile (url: string, targetFile: string) {  
     console.log("Download URL " + url);
@@ -22,7 +22,9 @@ function downloadFile (url: string, targetFile: string) {
             });
         });
     })
-  };
+};
+
+let child_processes: {[key: string]: ChildProcess} = {};
 
 app.whenReady().then(() => {
     let displays = screen.getAllDisplays();
@@ -77,6 +79,13 @@ app.whenReady().then(() => {
 
         window.loadFile(pjoin(__dirname, "..", "..", "index.html"));
     }
+
+    // Kill All Minecraft Servers
+    window.on("closed" , () => {
+        Object.keys(child_processes).forEach(k => {
+            child_processes[k].kill(0);
+        })
+    })
 });
 
 let appDataDir = pjoin(app.getPath("appData") , "minecraft_server_manager");
@@ -97,15 +106,13 @@ function saveSERVERJSON() {
 
 ipcMain.on(ipc.Channels.SERVER_LIST_REQ , (e) => {
     let appServerFile = pjoin(appDataDir , "server.json");
-    if(existsSync(appServerFile)) {
-        let data = readFileSync(appServerFile).toString();
-        e.sender.send(ipc.Channels.SERVER_LIST_RES , JSON.parse(data));
-        servers_JSON = JSON.parse(data);
-    }else{
-        console.log("Config File Doesn't exsist");
-        e.sender.send(ipc.Channels.SERVER_LIST_RES , JSON.stringify([]));
+    if(!existsSync(appServerFile)) {
         writeFileSync(appServerFile , "[]");
     }
+
+    let data = readFileSync(appServerFile).toString();
+    e.sender.send(ipc.Channels.SERVER_LIST_RES , JSON.parse(data));
+    servers_JSON = JSON.parse(data);
 });
 
 ipcMain.on(ipc.Channels.PAPER_VERSION_LIST_REQ , (e) => {
@@ -136,11 +143,11 @@ ipcMain.on(ipc.Channels.PAPER_VERSION_LIST_REQ , (e) => {
 });
 
 ipcMain.on(ipc.Channels.SERVER_ADD_REQ , (e , slrq: ipc.SERVER_ADD_REQ_PAYLOAD) => {
-    console.log("REQ");
     let serverId = uid(64);
     let serverName = slrq.server.name;
     let serverPort = slrq.server.port;
     let version = slrq.server.version;
+    let ram = slrq.server.ram;
 
     let serverDir = pjoin(appDataDir, "servers" , serverId);
     mkdirSync(serverDir);
@@ -151,6 +158,7 @@ ipcMain.on(ipc.Channels.SERVER_ADD_REQ , (e , slrq: ipc.SERVER_ADD_REQ_PAYLOAD) 
         port: serverPort,
         status: false,
         version: version,
+        ram: ram,
     });
 
     saveSERVERJSON();
@@ -199,4 +207,62 @@ ipcMain.on(ipc.Channels.SERVER_LIST_SET_REQ , (e , d: ipc.SERVER_LIST_SET_REQ_PA
         msg: "Successfully edited",
         type: "success",
     })
+});
+
+ipcMain.on(ipc.Channels.SERVER_ON_REQ , (e , d: ipc.SERVER_ON_REQ_PAYLOAD) => {
+    console.log(`start server ${d.id}`);
+    let tos = servers_JSON[servers_JSON.findIndex(s => s.id == d.id)];
+    servers_JSON[servers_JSON.findIndex(s => s.id == d.id)].status = true;
+    let command = `java`;
+    let argvs = [
+        `-Xmx${tos.ram}G`,
+        `-Xms${tos.ram}G`,
+        "-XX:+ParallelRefProcEnabled",
+        "-XX:MaxGCPauseMillis=200",
+        "-XX:+UnlockExperimentalVMOptions",
+        "-XX:+DisableExplicitGC",
+        "-XX:+AlwaysPreTouch",
+        "-XX:G1HeapWastePercent=5",
+        "-XX:G1MixedGCCountTarget=4",
+        "-XX:G1MixedGCLiveThresholdPercent=90",
+        "-XX:G1RSetUpdatingPauseTimePercent=5",
+        "-XX:SurvivorRatio=32",
+        "-XX:+PerfDisableSharedMem",
+        "-XX:MaxTenuringThreshold=1",
+        "-Dusing.aikars.flags=https://mcflags.emc.gs",
+        "-Daikars.new.flags=true",
+        `-Dfile.encoding=UTF-8`,
+        `-Dcom.mojang.eula.agree=true`,
+        `-jar`,
+        `${pjoin(jarDir , tos.version + ".jar")}`,
+        `--nogui`,
+        `-p${tos.port}`,
+    ];
+    child_processes[tos.id] = spawn(command , argvs , {
+        cwd: pjoin(serversDir , tos.id)
+    });
+    child_processes[tos.id].stdout?.on("data" , function (data) {
+        let sl: ipc.SERVER_LOG_PAYLOAD = {
+            id: tos.id,
+            message: data.toString()
+        };
+        e.sender.send(ipc.Channels.SERVER_LOG , sl);
+        console.log(data.toString());
+    });
+    child_processes[tos.id].stderr?.on("data" , function (data) {
+        let sl: ipc.SERVER_LOG_PAYLOAD = {
+            id: tos.id,
+            message: data.toString()
+        };
+        e.sender.send(ipc.Channels.SERVER_LOG , sl);
+        console.log(data.toString());
+    });
+    e.sender.send(ipc.Channels.SERVER_ON_RES , tos.id);
+});
+
+ipcMain.on(ipc.Channels.SERVER_OFF_REQ , (e , d: ipc.SERVER_ON_REQ_PAYLOAD) => {
+    console.log(`kill server ${d.id}`);
+    servers_JSON[servers_JSON.findIndex(s => s.id == d.id)].status = false;
+    let x = child_processes[d.id].kill()
+    e.sender.send(ipc.Channels.SERVER_OFF_RES , d.id);
 });

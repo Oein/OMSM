@@ -15,6 +15,12 @@ export enum Channels {
     SERVER_ADD_REQ="SAQ",
     SERVER_ADD_RES="SAR",
     TOAST_REQ="TQ",
+    SERVER_ON_REQ="SOQ",
+    SERVER_ON_RES="SOR",
+    SERVER_OFF_REQ="SFQ",
+    SERVER_OFF_RES="SFR",
+    SERVER_REMOVE_REQ="SRRQ",
+    SERVER_REMOVE_RES="SRRR",
 };
 
 // --------------------- Payloads --------------------- \\
@@ -69,6 +75,18 @@ export interface TOAST_REQ_PAYLOAD {
     type: TypeOptions;
 };
 
+export interface SERVER_ON_REQ_PAYLOAD {
+    id: string;
+};
+
+export interface SERVER_OFF_REQ_PAYLOAD {
+    id: string;
+};
+
+export interface SERVER_REMOVE_REQ_PAYLOAD {
+    id: string;
+};
+
 // --------------------- Common Types --------------------- \\
 export interface Server {
     name: string; // 서버 이름
@@ -76,4 +94,5 @@ export interface Server {
     port: number; // 서버 포트
     status: boolean; // 서버 켜짐 / 꺼짐
     version: string; // MC 버전
+    ram: number; // Ram (GB)
 };
