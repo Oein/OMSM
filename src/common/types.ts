@@ -21,6 +21,8 @@ export enum Channels {
     SERVER_OFF_RES="SFR",
     SERVER_REMOVE_REQ="SRRQ",
     SERVER_REMOVE_RES="SRRR",
+    OPEN_SERVER_FOLDER_REQ="OSFQ",
+    OPEN_SERVER_FOLDER_RES="OSFR",
 };
 
 // --------------------- Payloads --------------------- \\

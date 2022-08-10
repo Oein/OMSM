@@ -265,6 +265,9 @@ function App() {
             }}>Server UID : {managingServer.id}</Text>
           </Modal.Body>
           <Modal.Footer>
+            <Button auto onPress={() => {
+              ipcRenderer.send(ipc.Channels.OPEN_SERVER_FOLDER_REQ , managingServer.id);
+            }}>Open Server Directory</Button>
             <Button auto color="success" disabled={
               MCVers.length == 0 ||
               managingServer.name.length <= 0 ||

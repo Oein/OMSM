@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain , screen } from "electron";
+import { app, BrowserWindow, ipcMain, shell } from "electron";
 import {join as pjoin} from "path";
 import * as ipc from "../common/types";
 import { existsSync , readFileSync , writeFileSync , mkdirSync , createWriteStream , rmdirSync } from "fs-extra";
@@ -27,56 +27,22 @@ function downloadFile (url: string, targetFile: string) {
 let child_processes: {[key: string]: ChildProcess} = {};
 
 app.whenReady().then(() => {
-    let displays = screen.getAllDisplays();
-    let externalDisplay = displays.find((display) => {
-        return display.bounds.x !== 0 || display.bounds.y !== 0
-    })
-
-    let window;
+    let window = new BrowserWindow({
+        webPreferences: {
+            nodeIntegration: true,
+            contextIsolation: false,
+            nodeIntegrationInWorker: true,
+            nodeIntegrationInSubFrames: true,
+        },
+        width: 800,
+        height: 600,
+        minHeight: 600,
+        minWidth: 450,
+    });
 
     if (process.env.NODE_ENV === "dev") {
-        if(externalDisplay) {
-            window = new BrowserWindow({
-                x: externalDisplay.bounds.x,
-                y: externalDisplay.bounds.y,
-                webPreferences: {
-                    nodeIntegration: true,
-                    contextIsolation: false,
-                    nodeIntegrationInWorker: true,
-                    nodeIntegrationInSubFrames: true,
-                },
-                width: 800,
-                height: 600,
-                minHeight: 600,
-                minWidth: 450,
-            })
-        }else {
-            window = new BrowserWindow({
-                webPreferences: {
-                    nodeIntegration: true,
-                    contextIsolation: false,
-                    nodeIntegrationInWorker: true,
-                    nodeIntegrationInSubFrames: true,
-                },
-                width: 800,
-                height: 600,
-                minHeight: 600,
-                minWidth: 450,
-            });
-        }
         window.loadURL("http://localhost:8080");
     } else {
-        window = new BrowserWindow({
-            webPreferences: {
-                nodeIntegration: true,
-                contextIsolation: false,
-                nodeIntegrationInWorker: true,
-                nodeIntegrationInSubFrames: true,
-            },
-            width: 800,
-            height: 600,
-        });
-
         window.loadFile(pjoin(__dirname, "..", "..", "index.html"));
     }
 
@@ -296,4 +262,8 @@ ipcMain.on(ipc.Channels.SERVER_REMOVE_REQ , (e , d: string) => {
     servers_JSON = servers_JSON.filter(v => v.id != d);
     saveSERVERJSON();
     e.sender.send(ipc.Channels.SERVER_REMOVE_RES , "");
-})
+});
+
+ipcMain.on(ipc.Channels.OPEN_SERVER_FOLDER_REQ , (e , d: string) => {
+    shell.showItemInFolder(pjoin(serversDir , d));
+});
