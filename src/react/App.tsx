@@ -1,11 +1,12 @@
 import React , { useState , useEffect } from 'react';
 
-import { Text , Table , useTheme, Tooltip, Grid , Modal, Button, Input , Dropdown , Card, Container, Loading } from "@nextui-org/react";
-import { AiOutlineSetting , AiOutlineDesktop , AiOutlinePlus } from "react-icons/ai";
+import { Text , Table , useTheme, Tooltip, Grid , Modal, Button, Input , Dropdown , Card, Loading } from "@nextui-org/react";
+import { AiOutlineSetting , AiOutlineDesktop , AiOutlinePlus , AiOutlineDelete } from "react-icons/ai";
 const { ipcRenderer } = window.require("electron");
 import * as ipc from "../common/types";
 import { toast, ToastContainer } from 'react-toastify';
 import { uid } from 'uid';
+import { confirmAlert } from 'react-confirm-alert';
 
 function App() {
   // Table
@@ -34,6 +35,7 @@ function App() {
   const [rfr , setRFR] = useState("");
   const [logs , setLogs] = useState<{[key: string]: string}>({});
   const [serverTurnRequest , setSTRQ] = useState(false); 
+  const [consoleCommand , setConsoleCommand] = useState("");
 
   let servers2: ipc.Server[] = [];
 
@@ -77,6 +79,7 @@ function App() {
       servers2[servers2.findIndex(s => s.id == d)].status = true;
       setServers(servers2);
       setSTRQ(false);
+      setRFR(uid());
       // toast("Server started" , {type: "info"});
     });
 
@@ -84,8 +87,14 @@ function App() {
       servers2[servers2.findIndex(s => s.id == d)].status = false;
       setServers(servers2);
       setSTRQ(false);
+      setRFR(uid());
       // toast("Server ended" , {type: "info"});
     });
+
+    ipcRenderer.on(ipc.Channels.SERVER_REMOVE_RES , (e , d) => {
+      toast("Your server has been removed" , {type: "info"});
+      ipcRenderer.send(ipc.Channels.SERVER_LIST_REQ , "");
+    })
   } , []);
 
   return (
@@ -291,12 +300,11 @@ function App() {
               color={managingServer.status ? "error" : "success"}
               disabled={serverTurnRequest}
               onPress={() => {
-                setSTRQ(true);
                 if(managingServer.status){
-                  ipcRenderer.send(ipc.Channels.SERVER_OFF_REQ , {
-                    id: managingServer.id
-                  })
+                  toast("Please stop the server with stop command" , {type: "error"});
+                  return;
                 }else {
+                  setSTRQ(true);
                   ipcRenderer.send(ipc.Channels.SERVER_ON_REQ , {
                     id: managingServer.id
                   })
@@ -308,7 +316,7 @@ function App() {
             <Card variant='bordered'>
               <Card.Body>
                 <div style={{
-                  overflow: "scroll",
+                  overflowY: "scroll",
                   maxHeight: "50vh",
                   maxWidth: "95%",
                 }}>
@@ -330,6 +338,10 @@ function App() {
                       width="97%" 
                       clearable
                       disabled={!managingServer.status}
+                      value={consoleCommand}
+                      onChange={(e) => {
+                        setConsoleCommand(e.target.value);
+                      }}
                     />
                   </Grid>
                   <Grid xs={2}>
@@ -337,6 +349,13 @@ function App() {
                       color="primary" 
                       auto
                       disabled={!managingServer.status}
+                      onPress={() => {
+                        ipcRenderer.send(ipc.Channels.SERVER_COMMAND , {
+                          command: consoleCommand,
+                          id: managingServer.id
+                        });
+                        setConsoleCommand("");
+                      }}
                     >
                       Send!
                     </Button>
@@ -365,6 +384,7 @@ function App() {
       }}>
         <Text h1>OMSM</Text>
         <Text h6>Oein&rsquo;s Minecraft Server Manager</Text>
+        <Text h6>You can make this app larger. View &gt; Zoom In</Text>
       </header>
       <article>
         <Grid.Container gap={2} justify="center">
@@ -419,12 +439,34 @@ function App() {
                       }} />
                     </Tooltip>
                     <Tooltip content="Console" color="invert">
-                      <AiOutlineDesktop style={{
-                        transition: "ease .2s"
-                      }} size="22" onClick={() => {
+                      <AiOutlineDesktop size="22" onClick={() => {
                         setManagingServerId(i);
                         setManageModalId(2);
                         setManagingServer(servers[i]);
+                      }} />
+                    </Tooltip>
+                    <Tooltip content="Remove" color="invert">
+                      <AiOutlineDelete size="22" onClick={() => {
+                        if(servers[i].status == true) {
+                          toast("You can remove only offline servers." , {type: "warning"});
+                          return;
+                        }
+                        confirmAlert({
+                          title: "Are you sure?",
+                          message: "This action can not be undone.",
+                          buttons: [
+                            {
+                              label: `Remove server`,
+                              onClick: () => {
+                                ipcRenderer.send(ipc.Channels.SERVER_REMOVE_REQ , servers[i].id);
+                              }
+                            },
+                            {
+                              label: `Don't remove server`,
+                              onClick: () => {},
+                            }
+                          ]
+                        })
                       }} />
                     </Tooltip>
                   </Table.Cell>

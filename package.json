@@ -20,6 +20,7 @@
         "electron": "^20.0.1",
         "fs-extra": "^9.0.1",
         "react": "^17.0.1",
+        "react-confirm-alert": "2.8.0",
         "react-dom": "^17.0.1",
         "react-icons": "^4.4.0",
         "react-toastify": "^6.0.9",
