@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, shell } from "electron";
+import { app, BrowserWindow, ipcMain, shell, dialog } from "electron";
 import { join as pjoin } from "path";
 import * as ipc from "../common/types";
 import {
@@ -8,17 +8,31 @@ import {
 	mkdirSync,
 	createWriteStream,
 	rmdirSync,
+	copySync,
 } from "fs-extra";
 import axios from "axios";
 import { uid } from "uid";
-import https from "https";
+import { get } from "https";
 import { spawn, ChildProcess } from "child_process";
+
+let child_processes: { [key: string]: ChildProcess } = {};
+
+let appDataDir = pjoin(app.getPath("appData"), "minecraft_server_manager");
+if (!existsSync(appDataDir)) mkdirSync(appDataDir);
+
+let serversDir = pjoin(appDataDir, "servers");
+if (!existsSync(serversDir)) mkdirSync(serversDir);
+
+let jarDir = pjoin(appDataDir, "jar");
+if (!existsSync(jarDir)) mkdirSync(jarDir);
+
+let servers_JSON: ipc.Server[] = [];
 
 function downloadFile(url: string, targetFile: string) {
 	console.log("Download URL " + url);
 	return new Promise<void>((resolve, reject) => {
 		const file = createWriteStream(targetFile);
-		const request = https.get(url, function (response) {
+		get(url, function (response) {
 			response.pipe(file);
 
 			// after download completed close filestream
@@ -31,10 +45,19 @@ function downloadFile(url: string, targetFile: string) {
 	});
 }
 
-let child_processes: { [key: string]: ChildProcess } = {};
+function saveSERVERJSON() {
+	let appServerFile = pjoin(appDataDir, "server.json");
+	let ale: ipc.Server[] = servers_JSON;
+	Object.keys(ale).forEach((k) => {
+		ale[k as any as number].status = false;
+	});
+	writeFileSync(appServerFile, JSON.stringify(ale));
+}
+
+let window: BrowserWindow;
 
 app.whenReady().then(() => {
-	let window = new BrowserWindow({
+	window = new BrowserWindow({
 		webPreferences: {
 			nodeIntegration: true,
 			contextIsolation: false,
@@ -60,26 +83,6 @@ app.whenReady().then(() => {
 		});
 	});
 });
-
-let appDataDir = pjoin(app.getPath("appData"), "minecraft_server_manager");
-if (!existsSync(appDataDir)) mkdirSync(appDataDir);
-
-let serversDir = pjoin(appDataDir, "servers");
-if (!existsSync(serversDir)) mkdirSync(serversDir);
-
-let jarDir = pjoin(appDataDir, "jar");
-if (!existsSync(jarDir)) mkdirSync(jarDir);
-
-let servers_JSON: ipc.Server[] = [];
-
-function saveSERVERJSON() {
-	let appServerFile = pjoin(appDataDir, "server.json");
-	let ale: ipc.Server[] = servers_JSON;
-	Object.keys(ale).forEach((k) => {
-		ale[k as any as number].status = false;
-	});
-	writeFileSync(appServerFile, JSON.stringify(ale));
-}
 
 ipcMain.on(ipc.Channels.SERVER_LIST_REQ, (e) => {
 	let appServerFile = pjoin(appDataDir, "server.json");
@@ -263,7 +266,7 @@ ipcMain.on(ipc.Channels.SERVER_OFF_REQ, (e, d: ipc.SERVER_ON_REQ_PAYLOAD) => {
 	e.sender.send(ipc.Channels.SERVER_OFF_RES, d.id);
 });
 
-ipcMain.on(ipc.Channels.SERVER_COMMAND, (e, d: ipc.SERVER_COMMAND_PAYLOAD) => {
+ipcMain.on(ipc.Channels.SERVER_COMMAND, (_, d: ipc.SERVER_COMMAND_PAYLOAD) => {
 	child_processes[d.id].stdin?.write(d.command + "\n");
 });
 
@@ -278,6 +281,95 @@ ipcMain.on(ipc.Channels.SERVER_REMOVE_REQ, (e, d: string) => {
 	e.sender.send(ipc.Channels.SERVER_REMOVE_RES, "");
 });
 
-ipcMain.on(ipc.Channels.OPEN_SERVER_FOLDER_REQ, (e, d: string) => {
+ipcMain.on(ipc.Channels.OPEN_SERVER_FOLDER_REQ, (_, d: string) => {
 	shell.showItemInFolder(pjoin(serversDir, d));
 });
+
+ipcMain.on(ipc.Channels.SERVER_DIR_DIALOG_REQ, (e, d) => {
+	let x = dialog.showOpenDialogSync(window, {
+		properties: ["openDirectory"],
+	});
+	if (x == undefined) x = [""];
+	e.sender.send(ipc.Channels.SERVER_DIR_DIALOG_RES, x[0]);
+});
+
+ipcMain.on(
+	ipc.Channels.SERVER_IMPORT_REQ,
+	(e, slrq: ipc.SERVER_IMPORT_REQ_PAYLOAD) => {
+		let serverId = uid(64);
+		let serverName = slrq.server.name;
+		let serverPort = slrq.server.port;
+		let version = slrq.server.version;
+		let ram = slrq.server.ram;
+		let serverOldDir = slrq.dir;
+
+		let serverDir = pjoin(appDataDir, "servers", serverId);
+		mkdirSync(serverDir);
+
+		e.sender.send(ipc.Channels.TOAST_REQ, {
+			msg: "Server Copy Started",
+			type: "info",
+		});
+		try {
+			copySync(serverOldDir, serverDir);
+		} catch (err) {
+			e.sender.send(ipc.Channels.TOAST_REQ, {
+				msg: "Error occurred while copying your server",
+				type: "error",
+			});
+			e.sender.send(ipc.Channels.SERVER_ADD_RES, "DONE");
+			return;
+		}
+		e.sender.send(ipc.Channels.TOAST_REQ, {
+			msg: "Server Copy Ended",
+			type: "success",
+		});
+
+		servers_JSON.push({
+			id: serverId,
+			name: serverName,
+			port: serverPort,
+			status: false,
+			version: version,
+			ram: ram,
+		});
+
+		saveSERVERJSON();
+
+		e.sender.send(ipc.Channels.TOAST_REQ, {
+			msg: "Server added to database",
+			type: "success",
+		});
+
+		let jarFileName = pjoin(jarDir, version + ".jar");
+		if (!existsSync(jarFileName)) {
+			e.sender.send(ipc.Channels.TOAST_REQ, {
+				msg: "Download papermc jar file for mc " + version,
+				type: "info",
+			});
+			axios(
+				`https://papermc.io/api/v2/projects/paper/versions/${version}`
+			).then((d) => {
+				let buildT = d.data.builds.at(-1);
+				let fileURL = `https://papermc.io/api/v2/projects/paper/versions/${version}/builds/${buildT}/downloads/paper-${version}-${buildT}.jar`;
+				downloadFile(fileURL, jarFileName).then((e123) => {
+					e.sender.send(ipc.Channels.SERVER_ADD_RES, "DONE");
+					e.sender.send(ipc.Channels.TOAST_REQ, {
+						msg: "Papermc jar file downloaded",
+						type: "success",
+					});
+					e.sender.send(ipc.Channels.TOAST_REQ, {
+						msg: "Server success created",
+						type: "success",
+					});
+				});
+			});
+		} else {
+			e.sender.send(ipc.Channels.SERVER_ADD_RES, "DONE");
+			e.sender.send(ipc.Channels.TOAST_REQ, {
+				msg: "Server succese created",
+				type: "success",
+			});
+		}
+	}
+);

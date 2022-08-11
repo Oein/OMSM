@@ -12,6 +12,7 @@ import {
 	Dropdown,
 	Card,
 	Loading,
+	Popover,
 } from "@nextui-org/react";
 import {
 	AiOutlineSetting,
@@ -61,6 +62,9 @@ function App() {
 	const [serverTurnRequest, setSTRQ] = useState(false);
 	const [consoleCommand, setConsoleCommand] = useState("");
 
+	// Server Import
+	const [serverDir, setServerDir] = useState("");
+
 	let servers2: ipc.Server[] = [];
 
 	useEffect(() => {
@@ -73,7 +77,6 @@ function App() {
 		ipcRenderer.on(
 			ipc.Channels.SERVER_LIST_RES,
 			(e, slrp: ipc.Server[]) => {
-				console.log(slrp);
 				setServers(slrp);
 				servers2 = slrp;
 			}
@@ -108,6 +111,7 @@ function App() {
 		// Refresh Server List
 		ipcRenderer.on(ipc.Channels.SERVER_ADD_RES, (e) => {
 			setManageModalId(0);
+			setAddRequested(false);
 			ipcRenderer.send(ipc.Channels.SERVER_LIST_REQ, "");
 		});
 
@@ -151,6 +155,10 @@ function App() {
 		ipcRenderer.on(ipc.Channels.SERVER_REMOVE_RES, (e, d) => {
 			toast("Your server has been removed", { type: "info" });
 			ipcRenderer.send(ipc.Channels.SERVER_LIST_REQ, "");
+		});
+
+		ipcRenderer.on(ipc.Channels.SERVER_DIR_DIALOG_RES, (e, d) => {
+			setServerDir(d);
 		});
 	}, []);
 
@@ -590,6 +598,205 @@ function App() {
 								};
 								ipcRenderer.send(
 									ipc.Channels.SERVER_ADD_REQ,
+									x
+								);
+								setAddRequested(true);
+							}}
+						>
+							Add
+						</Button>
+					</Modal.Footer>
+				</Modal>
+			) : null}
+			{manageModalId == 4 ? (
+				<Modal
+					open={manageModalId == 4}
+					blur
+					preventClose={addRequested}
+					onClose={() => {
+						setVersionMenuOpened(false);
+						if (MCVers.length > 0) {
+							setServerVersion(MCVers.at(-1) as string);
+						}
+						setServerPort(25565);
+						setServerName("");
+						setManageModalId(0);
+					}}
+					onOpen={() => {
+						setVersionMenuOpened(false);
+						if (MCVers.length > 0) {
+							setServerVersion(MCVers.at(-1) as string);
+						}
+						setServerPort(25565);
+						setServerName("");
+						setServerRam("");
+						setServerDir("");
+					}}
+				>
+					<Modal.Header>
+						<Text id="modal-title" size={20}>
+							Import server
+						</Text>
+					</Modal.Header>
+					<Modal.Body>
+						<Grid.Container
+							css={{
+								marginBottom: "20px",
+							}}
+						>
+							<Grid xs={7.35}>
+								<Popover placement="top">
+									<Popover.Trigger>
+										<Input
+											readOnly
+											placeholder="Server directory"
+											width="80%"
+											value={serverDir.slice(0, 40)}
+											style={{
+												cursor: "pointer",
+											}}
+										/>
+									</Popover.Trigger>
+									<Popover.Content>
+										<Card
+											css={{
+												mw: "400px",
+												background: `${theme?.colors.primary}`,
+											}}
+											color="invert"
+										>
+											<Card.Body
+												css={{
+													padding: "20px",
+													marginRight: "20px",
+												}}
+											>
+												<Text
+													css={{
+														wordBreak: "break-all",
+														width: "90%",
+														color: "white",
+													}}
+												>
+													{serverDir == ""
+														? "Server Directory is empty"
+														: serverDir}
+												</Text>
+											</Card.Body>
+										</Card>
+									</Popover.Content>
+								</Popover>
+							</Grid>
+							<Grid xs={4} justify="center">
+								<Button
+									auto
+									onPress={() => {
+										ipcRenderer.send(
+											ipc.Channels.SERVER_DIR_DIALOG_REQ
+										);
+									}}
+								>
+									Set server directory
+								</Button>
+							</Grid>
+						</Grid.Container>
+						<Input
+							placeholder="Server Name"
+							value={serverName}
+							onChange={(e) => {
+								setServerName(e.target.value);
+							}}
+						/>
+						<Input
+							placeholder="Server Port"
+							type="number"
+							min="1"
+							max="65535"
+							value={serverPort}
+							onChange={(e) => {
+								setServerPort(
+									Math.min(
+										Math.max(parseInt(e.target.value), 1),
+										65535
+									)
+								);
+								if (e.target.value == "") setServerPort(1);
+							}}
+						/>
+						<Input
+							placeholder="Server Ram (GB)"
+							type="number"
+							value={serverRam}
+							onChange={(e) => {
+								setServerRam(e.target.value);
+							}}
+						/>
+						<Dropdown isOpen={versionMenuOpened}>
+							<Dropdown.Button
+								onClick={() => {
+									if (versionMenuOpened)
+										setVersionMenuOpened(false);
+									else setVersionMenuOpened(true);
+								}}
+							>
+								Version / {serverVersion}
+							</Dropdown.Button>
+							<Dropdown.Menu
+								onAction={(k) => {
+									setServerVersion(k.toString());
+									setVersionMenuOpened(false);
+								}}
+								css={{
+									maxHeight: "40vh",
+								}}
+								disabledKeys={["loading"]}
+							>
+								{MCVers.length == 0 ? (
+									<Dropdown.Item key="loading">
+										Loading...
+									</Dropdown.Item>
+								) : (
+									MCVers.map((v) => {
+										return (
+											<Dropdown.Item key={v}>
+												{v}
+											</Dropdown.Item>
+										);
+									})
+								)}
+							</Dropdown.Menu>
+						</Dropdown>
+					</Modal.Body>
+					<Modal.Footer>
+						<Button
+							auto
+							color="success"
+							disabled={
+								MCVers.length == 0 ||
+								serverName.length <= 0 ||
+								serverPort < 1 ||
+								serverPort > 65535 ||
+								addRequested ||
+								serverRam.toString().length == 0 ||
+								parseInt(serverRam).toString() != serverRam ||
+								serverDir == "" ||
+								serverDir == undefined ||
+								serverDir == null
+							}
+							onClick={() => {
+								let x: ipc.SERVER_IMPORT_REQ_PAYLOAD = {
+									server: {
+										id: "",
+										name: serverName,
+										port: serverPort,
+										status: false,
+										version: serverVersion,
+										ram: parseInt(serverRam),
+									},
+									dir: serverDir,
+								};
+								ipcRenderer.send(
+									ipc.Channels.SERVER_IMPORT_REQ,
 									x
 								);
 								setAddRequested(true);
