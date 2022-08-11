@@ -4,10 +4,6 @@ export enum Channels {
     SERVER_LIST_REQ="SLQ",
     SERVER_LIST_RES="SLR",
     SERVER_LIST_SET_REQ="SLSQ",
-    SERVER_CONFIG_SET_REQ="SCQ",
-    SERVER_CONFIG_SET_RES="SCR",
-    SERVER_CONFIG_GET_REQ="SCGQ",
-    SERVER_CONFIG_GET_RES="SCGR",
     SERVER_LOG="SL",
     SERVER_COMMAND="SCR",
     PAPER_VERSION_LIST_REQ="PVLQ",
@@ -33,23 +29,6 @@ export interface SERVER_LIST_RES_PAYLOAD {
 
 export interface SERVER_LIST_SET_REQ_PAYLOAD {
     servers: Server[];
-}
-
-export interface SERVER_CONFIG_SET_REQ_PAYLOAD {
-    server: Server; // 서버 config
-};
-
-export interface SERVER_CONFIG_SET_RES_PAYLOAD {
-    error: boolean; // 에러가 있는지
-    errorMsg: string; // 에러 메시지
-};
-
-export interface SERVER_CONFIG_GET_REQ_PAYLOAD {
-    id: string; // 서버 uid
-};
-
-export interface SERVER_CONFIG_GET_RES_PAYLOAD {
-    server: Server; // 서버 config
 };
 
 export interface SERVER_LOG_PAYLOAD {
